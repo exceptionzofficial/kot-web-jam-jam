@@ -66,10 +66,10 @@ function App() {
         }
       });
 
-      // Sort
-      const sortedRestaurant = activeRestaurant.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
-      const sortedBarKitchen = barKitchen.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
-      const sortedBarDrinks = barDrinks.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+      // Sort: Oldest first at the top
+      const sortedRestaurant = activeRestaurant.sort((a, b) => new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp));
+      const sortedBarKitchen = barKitchen.sort((a, b) => new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp));
+      const sortedBarDrinks = barDrinks.sort((a, b) => new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp));
 
       // Detect new orders
       if (!isInitial) {
