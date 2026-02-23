@@ -32,58 +32,23 @@ function App() {
       const kitchenData = await kitchenRes.json();
       const barData = await barRes.json();
 
-      const activeRestaurant = filterActive(kitchenData);
-      const activeBarRaw = filterActive(barData);
+      const activeRestaurant = filterActive(kitchenData).map((o) => ({ ...o, _source: 'restaurant' }));
+      const activeBar = filterActive(barData).map((o) => ({ ...o, _source: 'bar' }));
 
-      // Split bar orders: kitchen-category items → Kitchen tab, rest → Bar tab
-      const KITCHEN_CATEGORIES = ['kitchen'];
-      const barKitchenOrders = []; // bar orders containing kitchen items (shown in Kitchen tab)
-      const barDrinkOrders = [];   // bar orders containing drink items (shown in Bar tab)
-
-      activeBarRaw.forEach((order) => {
-        const kitchenItems = (order.items || []).filter(
-          (item) => KITCHEN_CATEGORIES.includes((item.category || '').toLowerCase())
-        );
-        const drinkItems = (order.items || []).filter(
-          (item) => !KITCHEN_CATEGORIES.includes((item.category || '').toLowerCase())
-        );
-
-        if (kitchenItems.length > 0) {
-          barKitchenOrders.push({
-            ...order,
-            items: kitchenItems,
-            _source: 'bar', // track origin so we use the right API on complete
-          });
-        }
-        if (drinkItems.length > 0) {
-          barDrinkOrders.push({
-            ...order,
-            items: drinkItems,
-            _source: 'bar',
-          });
-        }
-      });
-
-      // Merge: Kitchen tab = restaurant orders + bar kitchen orders
-      const allKitchen = [
-        ...activeRestaurant.map((o) => ({ ...o, _source: 'restaurant' })),
-        ...barKitchenOrders,
-      ].sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
-
-      const allBar = barDrinkOrders.sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-      );
+      // Sort by creation time
+      const sortedKitchen = activeRestaurant.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+      const sortedBar = activeBar.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
 
       // Detect new orders
-      const allIds = [...allKitchen, ...allBar].map((o) => o.orderId);
       if (!isInitial) {
         const newIds = new Set();
-        allKitchen.forEach((o) => {
+        sortedKitchen.forEach((o) => {
           if (!prevKitchenIds.current.has(o.orderId)) newIds.add(o.orderId);
         });
-        allBar.forEach((o) => {
+        sortedBar.forEach((o) => {
           if (!prevBarIds.current.has(o.orderId)) newIds.add(o.orderId);
         });
+
         if (newIds.size > 0) {
           setNewOrderIds(newIds);
           try {
@@ -101,11 +66,11 @@ function App() {
         }
       }
 
-      prevKitchenIds.current = new Set(allKitchen.map((o) => o.orderId));
-      prevBarIds.current = new Set(allBar.map((o) => o.orderId));
+      prevKitchenIds.current = new Set(sortedKitchen.map((o) => o.orderId));
+      prevBarIds.current = new Set(sortedBar.map((o) => o.orderId));
 
-      setKitchenOrders(allKitchen);
-      setBarOrders(allBar);
+      setKitchenOrders(sortedKitchen);
+      setBarOrders(sortedBar);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -202,14 +167,14 @@ function App() {
           className={`tab-btn ${activeTab === 'kitchen' ? 'active' : ''}`}
           onClick={() => setActiveTab('kitchen')}
         >
-          🍳 Kitchen Orders
+          🍳 Restaurant Kitchen
           <span className="tab-count">{kitchenOrders.length}</span>
         </button>
         <button
           className={`tab-btn ${activeTab === 'bar' ? 'active' : ''}`}
           onClick={() => setActiveTab('bar')}
         >
-          🍺 Bar Orders
+          🍺 Bar Kitchen
           <span className="tab-count">{barOrders.length}</span>
         </button>
       </div>
@@ -234,8 +199,8 @@ function App() {
             <h3>No Active Orders</h3>
             <p>
               {activeTab === 'kitchen'
-                ? 'No kitchen orders to prepare right now'
-                : 'No bar orders to prepare right now'}
+                ? 'No restaurant kitchen orders to prepare right now'
+                : 'No bar kitchen orders to prepare right now'}
             </p>
           </div>
         ) : (
