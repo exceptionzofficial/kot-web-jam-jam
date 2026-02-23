@@ -5,15 +5,17 @@ import './App.css';
 const API_BASE = 'https://jamjambackendsettlo.vercel.app/api';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('kitchen');
-  const [kitchenOrders, setKitchenOrders] = useState([]);
-  const [barOrders, setBarOrders] = useState([]);
+  const [activeTab, setActiveTab] = useState('restaurant');
+  const [restaurantOrders, setRestaurantOrders] = useState([]);
+  const [barKitchenOrders, setBarKitchenOrders] = useState([]);
+  const [barDrinkOrders, setBarDrinkOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [completingId, setCompletingId] = useState(null);
-  const prevKitchenIds = useRef(new Set());
-  const prevBarIds = useRef(new Set());
+  const prevRestaurantIds = useRef(new Set());
+  const prevBarKitchenIds = useRef(new Set());
+  const prevBarDrinkIds = useRef(new Set());
   const [newOrderIds, setNewOrderIds] = useState(new Set());
 
   // Filter only active orders (pending / preparing)
@@ -33,20 +35,53 @@ function App() {
       const barData = await barRes.json();
 
       const activeRestaurant = filterActive(kitchenData).map((o) => ({ ...o, _source: 'restaurant' }));
-      const activeBar = filterActive(barData).map((o) => ({ ...o, _source: 'bar' }));
+      const activeBarRaw = filterActive(barData);
 
-      // Sort by creation time
-      const sortedKitchen = activeRestaurant.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
-      const sortedBar = activeBar.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+      // Split Bar orders into Kitchen (Food/Snacks) and Drinks
+      const KITCHEN_CATEGORIES = ['kitchen', 'snack', 'food', 'snacks'];
+      const barKitchen = [];
+      const barDrinks = [];
+
+      activeBarRaw.forEach((order) => {
+        const kitchenItems = (order.items || []).filter(
+          (item) => KITCHEN_CATEGORIES.includes((item.category || '').toLowerCase())
+        );
+        const drinkItems = (order.items || []).filter(
+          (item) => !KITCHEN_CATEGORIES.includes((item.category || '').toLowerCase())
+        );
+
+        if (kitchenItems.length > 0) {
+          barKitchen.push({
+            ...order,
+            items: kitchenItems,
+            _source: 'bar',
+          });
+        }
+        if (drinkItems.length > 0) {
+          barDrinks.push({
+            ...order,
+            items: drinkItems,
+            _source: 'bar',
+          });
+        }
+      });
+
+      // Sort
+      const sortedRestaurant = activeRestaurant.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+      const sortedBarKitchen = barKitchen.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+      const sortedBarDrinks = barDrinks.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
 
       // Detect new orders
       if (!isInitial) {
         const newIds = new Set();
-        sortedKitchen.forEach((o) => {
-          if (!prevKitchenIds.current.has(o.orderId)) newIds.add(o.orderId);
+        sortedRestaurant.forEach((o) => {
+          if (!prevRestaurantIds.current.has(o.orderId)) newIds.add(o.orderId);
         });
-        sortedBar.forEach((o) => {
-          if (!prevBarIds.current.has(o.orderId)) newIds.add(o.orderId);
+        sortedBarKitchen.forEach((o) => {
+          if (!prevBarKitchenIds.current.has(o.orderId)) newIds.add(o.orderId);
+        });
+        sortedBarDrinks.forEach((o) => {
+          if (!prevBarDrinkIds.current.has(o.orderId)) newIds.add(o.orderId);
         });
 
         if (newIds.size > 0) {
@@ -66,11 +101,13 @@ function App() {
         }
       }
 
-      prevKitchenIds.current = new Set(sortedKitchen.map((o) => o.orderId));
-      prevBarIds.current = new Set(sortedBar.map((o) => o.orderId));
+      prevRestaurantIds.current = new Set(sortedRestaurant.map((o) => o.orderId));
+      prevBarKitchenIds.current = new Set(sortedBarKitchen.map((o) => o.orderId));
+      prevBarDrinkIds.current = new Set(sortedBarDrinks.map((o) => o.orderId));
 
-      setKitchenOrders(sortedKitchen);
-      setBarOrders(sortedBar);
+      setRestaurantOrders(sortedRestaurant);
+      setBarKitchenOrders(sortedBarKitchen);
+      setBarDrinkOrders(sortedBarDrinks);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -108,9 +145,10 @@ function App() {
 
       if (!res.ok) throw new Error('Failed to update order');
 
-      // Remove from both tabs (a single bar order can be split across Kitchen & Bar)
-      setKitchenOrders((prev) => prev.filter((o) => o.orderId !== orderId));
-      setBarOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+      // Remove from all tabs (a single bar order can be split across Kitchen & Drinks)
+      setRestaurantOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+      setBarKitchenOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+      setBarDrinkOrders((prev) => prev.filter((o) => o.orderId !== orderId));
     } catch (err) {
       alert('Failed to complete order: ' + err.message);
     } finally {
@@ -135,7 +173,11 @@ function App() {
     });
   };
 
-  const orders = activeTab === 'kitchen' ? kitchenOrders : barOrders;
+  const orders = activeTab === 'restaurant'
+    ? restaurantOrders
+    : activeTab === 'bar-kitchen'
+      ? barKitchenOrders
+      : barDrinkOrders;
 
   return (
     <div className="kot-app">
@@ -164,18 +206,25 @@ function App() {
       {/* Tabs */}
       <div className="tabs-container">
         <button
-          className={`tab-btn ${activeTab === 'kitchen' ? 'active' : ''}`}
-          onClick={() => setActiveTab('kitchen')}
+          className={`tab-btn ${activeTab === 'restaurant' ? 'active' : ''}`}
+          onClick={() => setActiveTab('restaurant')}
         >
           🍳 Restaurant Kitchen
-          <span className="tab-count">{kitchenOrders.length}</span>
+          <span className="tab-count">{restaurantOrders.length}</span>
         </button>
         <button
-          className={`tab-btn ${activeTab === 'bar' ? 'active' : ''}`}
-          onClick={() => setActiveTab('bar')}
+          className={`tab-btn ${activeTab === 'bar-kitchen' ? 'active' : ''}`}
+          onClick={() => setActiveTab('bar-kitchen')}
         >
-          🍺 Bar Kitchen
-          <span className="tab-count">{barOrders.length}</span>
+          🥘 Bar Kitchen
+          <span className="tab-count">{barKitchenOrders.length}</span>
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'bar-drinks' ? 'active' : ''}`}
+          onClick={() => setActiveTab('bar-drinks')}
+        >
+          🍹 Bar Counter
+          <span className="tab-count">{barDrinkOrders.length}</span>
         </button>
       </div>
 
@@ -198,9 +247,11 @@ function App() {
             </div>
             <h3>No Active Orders</h3>
             <p>
-              {activeTab === 'kitchen'
+              {activeTab === 'restaurant'
                 ? 'No restaurant kitchen orders to prepare right now'
-                : 'No bar kitchen orders to prepare right now'}
+                : activeTab === 'bar-kitchen'
+                  ? 'No bar kitchen orders to prepare right now'
+                  : 'No bar counter orders to prepare right now'}
             </p>
           </div>
         ) : (
